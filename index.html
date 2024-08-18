@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map with Markers</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .add-report-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            z-index: 1000;
+        }
+
+        .add-report-form {
+            display: none;
+            position: absolute;
+            top: 50px;
+            right: 10px;
+            width: 300px;
+            padding: 20px;
+            background-color: white;
+            border: 1px solid #ccc;
+            z-index: 1000;
+            overflow-y: auto;
+            max-height: 80%;
+        }
+
+        .add-report-form h2 {
+            margin-top: 0;
+        }
+
+        .add-report-form label {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .add-report-form textarea {
+            width: 100%;
+            padding: 5px;
+            margin-bottom: 10px;
+        }
+
+        .add-report-form input[type="submit"] {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        #location-map {
+            width: 100%;
+            height: 200px;
+            margin-bottom: 10px;
+        }
+
+        .leaflet-marker-icon {
+            background-color: white;
+            border: 1px solid black;
+            border-radius: 50%;
+            width: 12px;
+            height: 12px;
+        }
+
+        .marker-red { background-color: red; }
+        .marker-blue { background-color: blue; }
+        .marker-green { background-color: green; }
+        .marker-yellow { background-color: yellow; }
+        .marker-gray { background-color: gray; }
+
+        .notification {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 5px;
+            z-index: 1000;
+            font-size: 16px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1001;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80%;
+            overflow-y: auto;
+        }
+
+        .modal-body {
+            text-align: left;
+        }
+
+        .modal-body p {
+            margin-bottom: 15px;
+        }
+
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        #modal-media-content {
+            margin-top: 20px;
+        }
+
+        #modal-media-content img,
+        #modal-media-content video {
+            max-width: 100%;
+            height: auto;
+            margin-bottom: 10px;
+        }
+
+        .file-link {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .marker-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <button class="add-report-button" onclick="showAddReportForm()">Add Report</button>
+
+    <div class="add-report-form" id="add-report-form">
+        <h2>Add Report</h2>
+        <form onsubmit="addMarker(event)">
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" required><br>
+            <div id="location-map"></div>
+            <label for="description">Description:</label>
+            <textarea id="description" name="description" required></textarea><br>
+            <label for="informant">Informant:</label>
+            <input type="text" id="informant" name="informant" required><br>
+            <label for="mediaLink">Media Source (optional):</label>
+            <input type="text" id="mediaLink" name="mediaLink"><br>
+            <label for="mediaFiles">Media Files (optional):</label>
+            <input type="file" id="mediaFiles" name="mediaFiles" multiple><br>
+            <input type="hidden" id="latitude" name="latitude">
+            <input type="hidden" id="longitude" name="longitude">
+            <input type="submit" value="Add Marker" style="margin-top: 15px;">
+        </form>
+    </div>
+
+    <div id="dataModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal()">&times;</span>
+            <h2 id="modal-name" class="marker-title"></h2>
+            <div class="modal-body">
+                <p id="modal-description"></p>
+                <p id="modal-informant"></p>
+                <p id="modal-mediaLink"></p>
+                <div id="modal-media-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        var map, locationMap, locationMarker;
+
+        function initMap() {
+            map = L.map('map').setView([51.5074, -0.1278], 10);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            loadMarkers();
+        }
+
+        function showAddReportForm() {
+            document.getElementById('add-report-form').style.display = 'block';
+            if (!locationMap) {
+                initializeLocationMap();
+            }
+        }
+
+        function hideAddReportForm() {
+            document.getElementById('add-report-form').style.display = 'none';
+        }
+
+        function initializeLocationMap() {
+            locationMap = L.map('location-map').setView([51.5074, -0.1278], 10);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(locationMap);
+
+            locationMap.on('click', function(e) {
+                var lat = e.latlng.lat;
+                var lng = e.latlng.lng;
+
+                if (locationMarker) {
+                    locationMarker.setLatLng(e.latlng);
+                } else {
+                    locationMarker = L.marker(e.latlng).addTo(locationMap);
+                }
+
+                document.getElementById('latitude').value = lat;
+                document.getElementById('longitude').value = lng;
+            });
+        }
+
+        function addMarker(event) {
+            event.preventDefault();
+
+            var formData = new FormData(event.target);
+            fetch('/add_marker', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayNotification('Marker added successfully!');
+                    hideAddReportForm();
+                    loadMarkers();
+                    map.setView([formData.get('latitude'), formData.get('longitude')], map.getZoom());
+                } else {
+                    displayNotification('Error adding marker.');
+                }
+            })
+            .catch(error => {
+                console.error('Error adding marker:', error);
+                displayNotification('Error adding marker.');
+            });
+        }
+
+        function displayNotification(message) {
+            var notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.style.display = 'block';
+            setTimeout(function() {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+
+        function loadMarkers() {
+            fetch('/get_markers')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Loaded markers:', data);
+                    map.eachLayer(function(layer) {
+                        if (layer instanceof L.Marker) {
+                            map.removeLayer(layer);
+                        }
+                    });
+                    data.forEach(marker => {
+                        var markerIcon = L.divIcon({
+                            className: 'leaflet-marker-icon marker-' + (marker.color || 'red'),
+                            iconSize: [12, 12]
+                        });
+
+                        L.marker([marker.latitude, marker.longitude], { icon: markerIcon })
+                            .addTo(map)
+                            .on('click', function() {
+                                console.log('Marker clicked:', marker);
+                                openModal(marker);
+                            });
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching markers:', error);
+                });
+        }
+
+        function openModal(marker) {
+            document.getElementById('modal-name').textContent = marker.name;
+            document.getElementById('modal-description').textContent = 'Description: ' + marker.description;
+            document.getElementById('modal-informant').textContent = 'Informant: ' + marker.informant;
+            document.getElementById('modal-mediaLink').textContent = 'Media Link: ' + (marker.mediaLink || 'None');
+
+            var mediaContent = document.getElementById('modal-media-content');
+            mediaContent.innerHTML = '';
+
+            if (marker.mediaFiles && marker.mediaFiles.length > 0) {
+                marker.mediaFiles.forEach(file => {
+                    var fileExtension = file.split('.').pop().toLowerCase();
+                    if (['jpg', 'jpeg', 'png', 'gif'].includes(fileExtension)) {
+                        var img = document.createElement('img');
+                        img.src = '/uploads/' + file;
+                        mediaContent.appendChild(img);
+                    } else if (['mp4', 'webm', 'ogg'].includes(fileExtension)) {
+                        var video = document.createElement('video');
+                        video.src = '/uploads/' + file;
+                        video.controls = true;
+                        mediaContent.appendChild(video);
+                    } else {
+                        var link = document.createElement('a');
+                        link.href = '/uploads/' + file;
+                        link.textContent = file;
+                        link.className = 'file-link';
+                        link.target = '_blank';
+                        mediaContent.appendChild(link);
+                    }
+                });
+            } else {
+                mediaContent.textContent = 'No media files available';
+            }
+
+            document.getElementById('dataModal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('dataModal').style.display = 'none';
+        }
+
+        window.onload = initMap;
+    </script>
+</body>
+</html>
